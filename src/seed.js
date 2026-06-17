@@ -52,6 +52,60 @@ async function seed() {
   });
   await store.updateSession(finished.id, { exitTime: '2026-06-16 09:15:00', feeCents: 1500, status: 'FINISHED', paid: true });
 
+  const planSmallWd = await store.createRatePlan({
+    name: '小车工作日方案',
+    vehicleType: 'SMALL',
+    isHoliday: false,
+    freeMinutes: 15,
+    dailyCapCents: 8000,
+    memberDiscountPct: 10,
+    firstSegmentFree: false,
+    segments: [
+      { startTime: '00:00', endTime: '08:00', unitPriceCents: 200, granularityMinutes: 60, minDurationMinutes: 60 },
+      { startTime: '08:00', endTime: '18:00', unitPriceCents: 400, granularityMinutes: 15, minDurationMinutes: 30 },
+      { startTime: '18:00', endTime: '24:00', unitPriceCents: 200, granularityMinutes: 60, minDurationMinutes: 60 },
+    ],
+  });
+  const planSmallHol = await store.createRatePlan({
+    name: '小车节假日方案',
+    vehicleType: 'SMALL',
+    isHoliday: true,
+    freeMinutes: 15,
+    dailyCapCents: 12000,
+    memberDiscountPct: 10,
+    firstSegmentFree: false,
+    segments: [
+      { startTime: '00:00', endTime: '24:00', unitPriceCents: 300, granularityMinutes: 30, minDurationMinutes: 30 },
+    ],
+  });
+  const planLargeWd = await store.createRatePlan({
+    name: '大车工作日方案',
+    vehicleType: 'LARGE',
+    isHoliday: false,
+    freeMinutes: 0,
+    dailyCapCents: 16000,
+    memberDiscountPct: 5,
+    firstSegmentFree: false,
+    segments: [
+      { startTime: '00:00', endTime: '08:00', unitPriceCents: 400, granularityMinutes: 60, minDurationMinutes: 60 },
+      { startTime: '08:00', endTime: '18:00', unitPriceCents: 800, granularityMinutes: 15, minDurationMinutes: 30 },
+      { startTime: '18:00', endTime: '24:00', unitPriceCents: 400, granularityMinutes: 60, minDurationMinutes: 60 },
+    ],
+  });
+
+  await store.createLotBinding(lot1.id, planSmallWd.id);
+  await store.createLotBinding(lot1.id, planSmallHol.id);
+  await store.createLotBinding(lot1.id, planLargeWd.id);
+  await store.createLotBinding(lot2.id, planSmallWd.id);
+  await store.createLotBinding(lot2.id, planSmallHol.id);
+  await store.createLotBinding(lot2.id, planLargeWd.id);
+
+  await store.createHoliday({ holidayDate: '2026-01-01', name: '元旦' });
+  await store.createHoliday({ holidayDate: '2026-05-01', name: '劳动节' });
+  await store.createHoliday({ holidayDate: '2026-10-01', name: '国庆节' });
+  await store.createHoliday({ holidayDate: '2026-10-02', name: '国庆节' });
+  await store.createHoliday({ holidayDate: '2026-10-03', name: '国庆节' });
+
   return { skipped: false, users: 3, lots: 3, spaces: spaceRecs.length, vehicles: 3, sessions: 2 };
 }
 

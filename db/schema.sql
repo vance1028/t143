@@ -61,3 +61,58 @@ CREATE TABLE IF NOT EXISTS parking_sessions (
   INDEX idx_session_status (status),
   INDEX idx_session_plate (plate_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS rate_plans (
+  id                   INT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  name                 VARCHAR(128) NOT NULL,
+  vehicle_type         VARCHAR(16) NOT NULL DEFAULT 'SMALL',
+  is_holiday           TINYINT(1) NOT NULL DEFAULT 0,
+  free_minutes         INT NOT NULL DEFAULT 0,
+  daily_cap_cents      INT NOT NULL DEFAULT 0,
+  member_discount_pct  INT NOT NULL DEFAULT 0,
+  first_segment_free   TINYINT(1) NOT NULL DEFAULT 0,
+  created_at           DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at           DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS rate_segments (
+  id                    INT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  plan_id               INT UNSIGNED NOT NULL,
+  start_time            VARCHAR(5) NOT NULL,
+  end_time              VARCHAR(5) NOT NULL,
+  unit_price_cents      INT NOT NULL DEFAULT 0,
+  granularity_minutes   INT NOT NULL DEFAULT 60,
+  min_duration_minutes  INT NOT NULL DEFAULT 0,
+  sort_order            INT NOT NULL DEFAULT 0,
+  CONSTRAINT fk_segment_plan FOREIGN KEY (plan_id) REFERENCES rate_plans(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS lot_rate_bindings (
+  id         INT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  lot_id     INT UNSIGNED NOT NULL,
+  plan_id    INT UNSIGNED NOT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  UNIQUE KEY uk_lot_plan (lot_id, plan_id),
+  CONSTRAINT fk_binding_lot FOREIGN KEY (lot_id) REFERENCES parking_lots(id) ON DELETE CASCADE,
+  CONSTRAINT fk_binding_plan FOREIGN KEY (plan_id) REFERENCES rate_plans(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS holiday_calendar (
+  id           INT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  holiday_date DATE NOT NULL UNIQUE,
+  name         VARCHAR(128) NOT NULL DEFAULT '',
+  created_at   DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS billing_snapshots (
+  id               INT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  session_id       INT UNSIGNED NOT NULL,
+  plan_id          INT UNSIGNED NOT NULL,
+  snapshot_json    JSON NOT NULL,
+  calculated_cents INT NOT NULL DEFAULT 0,
+  detail_json      JSON NOT NULL,
+  created_at       DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  UNIQUE KEY uk_snapshot_session (session_id),
+  CONSTRAINT fk_snapshot_session FOREIGN KEY (session_id) REFERENCES parking_sessions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_snapshot_plan FOREIGN KEY (plan_id) REFERENCES rate_plans(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

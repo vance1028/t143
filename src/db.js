@@ -50,7 +50,7 @@ async function resetAll() {
   const conn = await getPool().getConnection();
   try {
     await conn.query('SET FOREIGN_KEY_CHECKS = 0');
-    for (const t of ['parking_sessions', 'parking_spaces', 'vehicles', 'parking_lots', 'users']) {
+    for (const t of ['billing_snapshots', 'lot_rate_bindings', 'rate_segments', 'rate_plans', 'holiday_calendar', 'parking_sessions', 'parking_spaces', 'vehicles', 'parking_lots', 'users']) {
       await conn.query(`TRUNCATE TABLE ${t}`);
     }
     await conn.query('SET FOREIGN_KEY_CHECKS = 1');

@@ -125,10 +125,11 @@ test('停车记录：入场后再出场，状态流转与重复出场拦截', as
   const sid = enter.body.data.id;
 
   const exit1 = await request(app).post(`/api/sessions/${sid}/exit`).set('Authorization', `Bearer ${token}`)
-    .send({ exitTime: '2026-06-16 11:00:00', feeCents: 800 });
+    .send({ exitTime: '2026-06-16 11:00:00' });
   assert.strictEqual(exit1.status, 200);
   assert.strictEqual(exit1.body.data.status, 'FINISHED');
-  assert.strictEqual(exit1.body.data.feeCents, 800);
+  assert.strictEqual(exit1.body.data.feeCents, 1080);
+  assert.ok(exit1.body.data.billingBreakdown);
 
   const exit2 = await request(app).post(`/api/sessions/${sid}/exit`).set('Authorization', `Bearer ${token}`)
     .send({ exitTime: '2026-06-16 12:00:00' });

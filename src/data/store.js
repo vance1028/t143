@@ -50,6 +50,45 @@ function mapSession(r) {
     status: r.status, paid: !!r.paid, createdAt: r.created_at,
   };
 }
+function mapRatePlan(r) {
+  if (!r) return null;
+  return {
+    id: r.id, name: r.name, vehicleType: r.vehicle_type, isHoliday: !!r.is_holiday,
+    freeMinutes: r.free_minutes, dailyCapCents: r.daily_cap_cents,
+    memberDiscountPct: r.member_discount_pct, firstSegmentFree: !!r.first_segment_free,
+    createdAt: r.created_at, updatedAt: r.updated_at,
+  };
+}
+function mapRateSegment(r) {
+  if (!r) return null;
+  return {
+    id: r.id, planId: r.plan_id, startTime: r.start_time, endTime: r.end_time,
+    unitPriceCents: r.unit_price_cents, granularityMinutes: r.granularity_minutes,
+    minDurationMinutes: r.min_duration_minutes, sortOrder: r.sort_order,
+  };
+}
+function mapLotBinding(r) {
+  if (!r) return null;
+  return {
+    id: r.id, lotId: r.lot_id, planId: r.plan_id, createdAt: r.created_at,
+  };
+}
+function mapHoliday(r) {
+  if (!r) return null;
+  return {
+    id: r.id, holidayDate: r.holiday_date, name: r.name, createdAt: r.created_at,
+  };
+}
+function mapBillingSnapshot(r) {
+  if (!r) return null;
+  return {
+    id: r.id, sessionId: r.session_id, planId: r.plan_id,
+    snapshotJson: typeof r.snapshot_json === 'string' ? JSON.parse(r.snapshot_json) : r.snapshot_json,
+    calculatedCents: r.calculated_cents,
+    detailJson: typeof r.detail_json === 'string' ? JSON.parse(r.detail_json) : r.detail_json,
+    createdAt: r.created_at,
+  };
+}
 
 /* ----------------------------- 用户 ----------------------------- */
 
@@ -254,11 +293,174 @@ async function updateSession(id, d) {
   return getSessionById(id);
 }
 
+/* ----------------------------- 费率方案 ----------------------------- */
+
+async function listRatePlans({ vehicleType, isHoliday } = {}) {
+  const where = []; const params = [];
+  if (vehicleType) { where.push('vehicle_type = ?'); params.push(vehicleType); }
+  if (isHoliday !== undefined) { where.push('is_holiday = ?'); params.push(isHoliday ? 1 : 0); }
+  const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const [rows] = await getPool().query(`SELECT * FROM rate_plans ${clause} ORDER BY id DESC`, params);
+  return rows.map(mapRatePlan);
+}
+async function getRatePlanById(id) {
+  const [rows] = await getPool().query('SELECT * FROM rate_plans WHERE id = ?', [id]);
+  return mapRatePlan(rows[0]);
+}
+async function createRatePlan(d) {
+  const [r] = await getPool().query(
+    `INSERT INTO rate_plans (name, vehicle_type, is_holiday, free_minutes, daily_cap_cents, member_discount_pct, first_segment_free)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [d.name, d.vehicleType || 'SMALL', d.isHoliday ? 1 : 0, d.freeMinutes || 0,
+     d.dailyCapCents || 0, d.memberDiscountPct || 0, d.firstSegmentFree ? 1 : 0],
+  );
+  const planId = r.insertId;
+  if (Array.isArray(d.segments)) {
+    for (let i = 0; i < d.segments.length; i += 1) {
+      const seg = d.segments[i];
+      await getPool().query(
+        `INSERT INTO rate_segments (plan_id, start_time, end_time, unit_price_cents, granularity_minutes, min_duration_minutes, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [planId, seg.startTime, seg.endTime, seg.unitPriceCents || 0,
+         seg.granularityMinutes || 60, seg.minDurationMinutes || 0, i],
+      );
+    }
+  }
+  return getRatePlanWithSegments(planId);
+}
+async function updateRatePlan(id, d) {
+  const map = { name: 'name', vehicleType: 'vehicle_type', freeMinutes: 'free_minutes', dailyCapCents: 'daily_cap_cents', memberDiscountPct: 'member_discount_pct' };
+  const sets = []; const params = [];
+  for (const [k, col] of Object.entries(map)) {
+    if (d[k] !== undefined) { sets.push(`${col} = ?`); params.push(d[k]); }
+  }
+  if (d.isHoliday !== undefined) { sets.push('is_holiday = ?'); params.push(d.isHoliday ? 1 : 0); }
+  if (d.firstSegmentFree !== undefined) { sets.push('first_segment_free = ?'); params.push(d.firstSegmentFree ? 1 : 0); }
+  if (sets.length) {
+    sets.push('updated_at = CURRENT_TIMESTAMP(3)');
+    params.push(id);
+    await getPool().query(`UPDATE rate_plans SET ${sets.join(', ')} WHERE id = ?`, params);
+  }
+  if (Array.isArray(d.segments)) {
+    await getPool().query('DELETE FROM rate_segments WHERE plan_id = ?', [id]);
+    for (let i = 0; i < d.segments.length; i += 1) {
+      const seg = d.segments[i];
+      await getPool().query(
+        `INSERT INTO rate_segments (plan_id, start_time, end_time, unit_price_cents, granularity_minutes, min_duration_minutes, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [id, seg.startTime, seg.endTime, seg.unitPriceCents || 0,
+         seg.granularityMinutes || 60, seg.minDurationMinutes || 0, i],
+      );
+    }
+  }
+  return getRatePlanWithSegments(id);
+}
+async function deleteRatePlan(id) {
+  const [r] = await getPool().query('DELETE FROM rate_plans WHERE id = ?', [id]);
+  return r.affectedRows > 0;
+}
+async function getRatePlanWithSegments(id) {
+  const plan = await getRatePlanById(id);
+  if (!plan) return null;
+  const [rows] = await getPool().query('SELECT * FROM rate_segments WHERE plan_id = ? ORDER BY sort_order, start_time', [id]);
+  plan.segments = rows.map(mapRateSegment);
+  return plan;
+}
+
+/* ----------------------------- 车场-方案绑定 ----------------------------- */
+
+async function listLotBindings(lotId) {
+  const [rows] = await getPool().query('SELECT * FROM lot_rate_bindings WHERE lot_id = ? ORDER BY id', [lotId]);
+  return rows.map(mapLotBinding);
+}
+async function createLotBinding(lotId, planId) {
+  const [r] = await getPool().query(
+    'INSERT INTO lot_rate_bindings (lot_id, plan_id) VALUES (?, ?)',
+    [lotId, planId],
+  );
+  const [rows] = await getPool().query('SELECT * FROM lot_rate_bindings WHERE id = ?', [r.insertId]);
+  return mapLotBinding(rows[0]);
+}
+async function deleteLotBinding(lotId, planId) {
+  const [r] = await getPool().query('DELETE FROM lot_rate_bindings WHERE lot_id = ? AND plan_id = ?', [lotId, planId]);
+  return r.affectedRows > 0;
+}
+async function getActivePlan(lotId, vehicleType, isHoliday) {
+  const [rows] = await getPool().query(
+    `SELECT rp.* FROM rate_plans rp
+     INNER JOIN lot_rate_bindings lrb ON lrb.plan_id = rp.id
+     WHERE lrb.lot_id = ? AND rp.vehicle_type = ? AND rp.is_holiday = ?
+     LIMIT 1`,
+    [lotId, vehicleType, isHoliday ? 1 : 0],
+  );
+  if (!rows.length) return null;
+  const plan = mapRatePlan(rows[0]);
+  const [segs] = await getPool().query('SELECT * FROM rate_segments WHERE plan_id = ? ORDER BY sort_order, start_time', [plan.id]);
+  plan.segments = segs.map(mapRateSegment);
+  return plan;
+}
+
+/* ----------------------------- 节假日 ----------------------------- */
+
+async function listHolidays({ year } = {}) {
+  const where = []; const params = [];
+  if (year) { where.push('YEAR(holiday_date) = ?'); params.push(Number(year)); }
+  const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const [rows] = await getPool().query(`SELECT * FROM holiday_calendar ${clause} ORDER BY holiday_date`, params);
+  return rows.map(mapHoliday);
+}
+async function createHoliday(d) {
+  const [r] = await getPool().query(
+    'INSERT INTO holiday_calendar (holiday_date, name) VALUES (?, ?)',
+    [d.holidayDate, d.name || ''],
+  );
+  const [rows] = await getPool().query('SELECT * FROM holiday_calendar WHERE id = ?', [r.insertId]);
+  return mapHoliday(rows[0]);
+}
+async function deleteHoliday(id) {
+  const [r] = await getPool().query('DELETE FROM holiday_calendar WHERE id = ?', [id]);
+  return r.affectedRows > 0;
+}
+async function getHolidayDatesInRange(startDate, endDate) {
+  const [rows] = await getPool().query(
+    'SELECT holiday_date FROM holiday_calendar WHERE holiday_date >= ? AND holiday_date <= ? ORDER BY holiday_date',
+    [startDate, endDate],
+  );
+  return rows.map((r) => {
+    const d = r.holiday_date;
+    if (d instanceof Date) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    return String(d).slice(0, 10);
+  });
+}
+
+/* ----------------------------- 计费快照 ----------------------------- */
+
+async function createBillingSnapshot(d) {
+  const [r] = await getPool().query(
+    `INSERT INTO billing_snapshots (session_id, plan_id, snapshot_json, calculated_cents, detail_json)
+     VALUES (?, ?, ?, ?, ?)`,
+    [d.sessionId, d.planId, JSON.stringify(d.snapshotJson), d.calculatedCents, JSON.stringify(d.detailJson)],
+  );
+  const [rows] = await getPool().query('SELECT * FROM billing_snapshots WHERE id = ?', [r.insertId]);
+  return mapBillingSnapshot(rows[0]);
+}
+async function getBillingSnapshotBySessionId(sessionId) {
+  const [rows] = await getPool().query('SELECT * FROM billing_snapshots WHERE session_id = ?', [sessionId]);
+  return mapBillingSnapshot(rows[0]);
+}
+
 module.exports = {
   mapUser, mapLot, mapSpace, mapVehicle, mapSession,
+  mapRatePlan, mapRateSegment, mapLotBinding, mapHoliday, mapBillingSnapshot,
   getUserByUsername, getUserById, listUsers, createUser, updateUser, deleteUser, countUsers,
   listLots, getLotById, getLotByCode, createLot, updateLot, deleteLot,
   listSpaces, getSpaceById, getSpaceByCode, createSpace, updateSpace, deleteSpace,
   listVehicles, getVehicleById, getVehicleByPlate, createVehicle, updateVehicle, deleteVehicle,
   listSessions, getSessionById, createSession, updateSession,
+  listRatePlans, getRatePlanById, createRatePlan, updateRatePlan, deleteRatePlan, getRatePlanWithSegments,
+  listLotBindings, createLotBinding, deleteLotBinding, getActivePlan,
+  listHolidays, createHoliday, deleteHoliday, getHolidayDatesInRange,
+  createBillingSnapshot, getBillingSnapshotBySessionId,
 };
