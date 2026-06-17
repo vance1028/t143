@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS holiday_calendar (
 CREATE TABLE IF NOT EXISTS billing_snapshots (
   id               INT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
   session_id       INT UNSIGNED NOT NULL,
-  plan_id          INT UNSIGNED NOT NULL,
+  plan_id          INT UNSIGNED NULL,
   snapshot_json    JSON NOT NULL,
   calculated_cents INT NOT NULL DEFAULT 0,
   detail_json      JSON NOT NULL,

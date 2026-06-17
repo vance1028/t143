@@ -8,13 +8,25 @@ const { hashPassword } = require('../utils/password');
  * 对外返回 camelCase 字段对象。
  */
 
+function pad2(n) { return String(n).padStart(2, '0'); }
+function formatDateTime(d) {
+  if (!d) return d;
+  if (typeof d === 'string') return d;
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+function formatDate(d) {
+  if (!d) return d;
+  if (typeof d === 'string') return d.slice(0, 10);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
 /* ----------------------------- 映射 ----------------------------- */
 
 function mapUser(r) {
   if (!r) return null;
   return {
     id: r.id, username: r.username, name: r.name, role: r.role,
-    status: r.status, createdAt: r.created_at,
+    status: r.status, createdAt: formatDateTime(r.created_at),
   };
 }
 function mapUserWithHash(r) {
@@ -25,29 +37,29 @@ function mapLot(r) {
   if (!r) return null;
   return {
     id: r.id, code: r.code, name: r.name, district: r.district, address: r.address,
-    totalSpaces: r.total_spaces, status: r.status, createdAt: r.created_at, updatedAt: r.updated_at,
+    totalSpaces: r.total_spaces, status: r.status, createdAt: formatDateTime(r.created_at), updatedAt: formatDateTime(r.updated_at),
   };
 }
 function mapSpace(r) {
   if (!r) return null;
   return {
     id: r.id, lotId: r.lot_id, code: r.code, type: r.type, status: r.status,
-    createdAt: r.created_at, updatedAt: r.updated_at,
+    createdAt: formatDateTime(r.created_at), updatedAt: formatDateTime(r.updated_at),
   };
 }
 function mapVehicle(r) {
   if (!r) return null;
   return {
     id: r.id, plateNo: r.plate_no, ownerName: r.owner_name, phone: r.phone,
-    vehicleType: r.vehicle_type, isMember: !!r.is_member, createdAt: r.created_at,
+    vehicleType: r.vehicle_type, isMember: !!r.is_member, createdAt: formatDateTime(r.created_at),
   };
 }
 function mapSession(r) {
   if (!r) return null;
   return {
     id: r.id, lotId: r.lot_id, spaceId: r.space_id, plateNo: r.plate_no,
-    enterTime: r.enter_time, exitTime: r.exit_time, feeCents: r.fee_cents,
-    status: r.status, paid: !!r.paid, createdAt: r.created_at,
+    enterTime: formatDateTime(r.enter_time), exitTime: formatDateTime(r.exit_time), feeCents: r.fee_cents,
+    status: r.status, paid: !!r.paid, createdAt: formatDateTime(r.created_at),
   };
 }
 function mapRatePlan(r) {
@@ -56,7 +68,7 @@ function mapRatePlan(r) {
     id: r.id, name: r.name, vehicleType: r.vehicle_type, isHoliday: !!r.is_holiday,
     freeMinutes: r.free_minutes, dailyCapCents: r.daily_cap_cents,
     memberDiscountPct: r.member_discount_pct, firstSegmentFree: !!r.first_segment_free,
-    createdAt: r.created_at, updatedAt: r.updated_at,
+    createdAt: formatDateTime(r.created_at), updatedAt: formatDateTime(r.updated_at),
   };
 }
 function mapRateSegment(r) {
@@ -70,13 +82,13 @@ function mapRateSegment(r) {
 function mapLotBinding(r) {
   if (!r) return null;
   return {
-    id: r.id, lotId: r.lot_id, planId: r.plan_id, createdAt: r.created_at,
+    id: r.id, lotId: r.lot_id, planId: r.plan_id, createdAt: formatDateTime(r.created_at),
   };
 }
 function mapHoliday(r) {
   if (!r) return null;
   return {
-    id: r.id, holidayDate: r.holiday_date, name: r.name, createdAt: r.created_at,
+    id: r.id, holidayDate: formatDate(r.holiday_date), name: r.name, createdAt: formatDateTime(r.created_at),
   };
 }
 function mapBillingSnapshot(r) {
@@ -86,7 +98,7 @@ function mapBillingSnapshot(r) {
     snapshotJson: typeof r.snapshot_json === 'string' ? JSON.parse(r.snapshot_json) : r.snapshot_json,
     calculatedCents: r.calculated_cents,
     detailJson: typeof r.detail_json === 'string' ? JSON.parse(r.detail_json) : r.detail_json,
-    createdAt: r.created_at,
+    createdAt: formatDateTime(r.created_at),
   };
 }
 
@@ -422,17 +434,13 @@ async function deleteHoliday(id) {
   return r.affectedRows > 0;
 }
 async function getHolidayDatesInRange(startDate, endDate) {
+  const s = formatDate(startDate);
+  const e = formatDate(endDate);
   const [rows] = await getPool().query(
     'SELECT holiday_date FROM holiday_calendar WHERE holiday_date >= ? AND holiday_date <= ? ORDER BY holiday_date',
-    [startDate, endDate],
+    [s, e],
   );
-  return rows.map((r) => {
-    const d = r.holiday_date;
-    if (d instanceof Date) {
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    }
-    return String(d).slice(0, 10);
-  });
+  return rows.map((r) => formatDate(r.holiday_date));
 }
 
 /* ----------------------------- 计费快照 ----------------------------- */
